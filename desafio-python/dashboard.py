@@ -2,78 +2,101 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# Configurações gerais da página
-st.set_page_config(
-    page_title="Meu dashboard",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded")
+# Configurar a estilização do Streamlit
+st.set_page_config(page_title='Dashboard COVID-19 Brasil', layout='wide')
+st.markdown('<link rel="stylesheet" href="style.css">', unsafe_allow_html=True)
 
-# Estilização CSS 
-# Crie o seu arquivo .css
-with open('style.css', 'r') as fp:
-    st.markdown(f"<style>{fp.read()}</style>", unsafe_allow_html=True)
+# Título do dashboard
+st.title('Dashboard COVID-19 Brasil')
 
-# Carregamento de dados com Pandas
-data = pd.read_csv('data_brazil.csv')
+# Carregar os dados
+df = pd.read_csv('covid_19_data_brazil.csv')
 
-# Exibir os nomes das colunas para verificar
-st.write("Nomes das colunas no DataFrame:", data.columns)
+# Processar dados
+df['ObservationDate'] = pd.to_datetime(df['ObservationDate'], format='%m/%d/%Y')
+df = df.sort_values('ObservationDate')
 
-# Converter a coluna 'Date' para datetime, se existir
-if 'Date' in data.columns:
-    data['Date'] = pd.to_datetime(data['Date'])
-else:
-    st.write("A coluna 'Date' não foi encontrada. Verifique os nomes das colunas no CSV.")
+# Calcular novos casos e novos óbitos por dia
+df['New Cases'] = df.groupby('Province/State')['Confirmed'].diff().fillna(0)
+df['New Deaths'] = df.groupby('Province/State')['Deaths'].diff().fillna(0)
+
+# Filtros
+st.sidebar.header('Filtros')
+state = df['Province/State'].unique().tolist()
+state.insert(0, 'Todos')
+selected_state = st.sidebar.selectbox('Selecione o Estado', state)
+
+# Filtro de data
+start_date = st.sidebar.date_input('Data de Início', df['ObservationDate'].min())
+end_date = st.sidebar.date_input('Data Final', df['ObservationDate'].max())
+
+# Aplicar filtros
+filtered_df = df
+if selected_state != 'Todos':
+    filtered_df = filtered_df[filtered_df['Province/State'] == selected_state]
+filtered_df = filtered_df[(filtered_df['ObservationDate'] >= pd.to_datetime(start_date)) & (filtered_df['ObservationDate'] <= pd.to_datetime(end_date))]
+
+# Gráfico de casos acumulados
+fig_cases = px.line(filtered_df, x='ObservationDate', y='Confirmed', title='Casos Acumulados')
+fig_cases.update_xaxes(title='Data')
+fig_cases.update_yaxes(title='Casos Acumulados')
+st.plotly_chart(fig_cases, use_container_width=True)
+
+# Gráfico de óbitos acumulados
+fig_deaths = px.line(filtered_df, x='ObservationDate', y='Deaths', title='Óbitos Acumulados')
+fig_deaths.update_xaxes(title='Data')
+fig_deaths.update_yaxes(title='Óbitos Acumulados')
+st.plotly_chart(fig_deaths, use_container_width=True)
+
+# Gráfico de novos casos por dia
+fig_new_cases = px.bar(filtered_df, x='ObservationDate', y='New Cases', title='Novos Casos por Dia')
+fig_new_cases.update_xaxes(title='Data')
+fig_new_cases.update_yaxes(title='Novos Casos')
+st.plotly_chart(fig_new_cases, use_container_width=True)
+
+# Gráfico de novos óbitos por dia
+fig_new_deaths = px.bar(filtered_df, x='ObservationDate', y='New Deaths', title='Novos Óbitos por Dia')
+fig_new_deaths.update_xaxes(title='Data')
+fig_new_deaths.update_yaxes(title='Novos Óbitos')
+st.plotly_chart(fig_new_deaths, use_container_width=True)
+
+# Gráfico de recuperações acumuladas
+fig_recovered = px.line(filtered_df, x='ObservationDate', y='Recovered', title='Recuperações Acumuladas')
+fig_recovered.update_xaxes(title='Data')
+fig_recovered.update_yaxes(title='Recuperações Acumuladas')
+st.plotly_chart(fig_recovered, use_container_width=True)
+
+# Mapa interativo de casos confirmados no Brasil
+brazil_states = {
+    'Acre': 'AC', 'Alagoas': 'AL', 'Amapa': 'AP', 'Amazonas': 'AM', 'Bahia': 'BA', 'Ceara': 'CE', 'Distrito Federal': 'DF', 
+    'Espirito Santo': 'ES', 'Goias': 'GO', 'Maranhao': 'MA', 'Mato Grosso': 'MT', 'Mato Grosso do Sul': 'MS', 'Minas Gerais': 'MG', 
+    'Para': 'PA', 'Paraiba': 'PB', 'Parana': 'PR', 'Pernambuco': 'PE', 'Piaui': 'PI', 'Rio de Janeiro': 'RJ', 'Rio Grande do Norte': 'RN', 
+    'Rio Grande do Sul': 'RS', 'Rondonia': 'RO', 'Roraima': 'RR', 'Santa Catarina': 'SC', 'Sao Paulo': 'SP', 'Sergipe': 'SE', 'Tocantins': 'TO'
+}
+
+# Adicionar coluna de códigos dos estados
+df['State Code'] = df['UF'].map(brazil_states)
+if df['State Code'].isnull().any():
+    st.error("Erro: Alguns estados não foram mapeados corretamente. Verifique os nomes dos estados no CSV.")
     st.stop()
 
-# Adicionar uma coluna para o ano
-data['Year'] = data['Date'].dt.year
+# Filtrar os dados para a data mais recente
+latest_date = filtered_df['ObservationDate'].max()
+latest_data = df[df['ObservationDate'] == latest_date]
 
-# Função para criar um gráfico de linhas
-def plot1(data, x, y, color):
-    fig = px.line(data, x=x, y=y, color=color,
-                  title=f'Temperaturas Diárias em {data["Year"].iloc[0]}',
-                  labels={y: 'Temperatura Média (°C)', x: 'Data'})
-    return fig
-
-# Função para criar um gráfico de barras
-def plot2(data, x, y, color):
-    fig = px.bar(data, x=x, y=y, color=color,
-                 title='Temperatura Média Anual por Cidade',
-                 labels={y: 'Temperatura Média (°C)', x: 'Cidade'})
-    return fig
-
-# Função para criar um gráfico de dispersão
-def plot3(data, x, y, color):
-    fig = px.scatter(data, x=x, y=y, color=color,
-                     title='Distribuição de Temperaturas ao Longo do Ano',
-                     labels={y: 'Temperatura Média (°C)', x: 'Data'})
-    return fig
-
-# Configurar o título e a descrição do aplicativo
-st.title('Dashboard de Temperatura Diária')
-st.markdown("""
-    Este dashboard permite visualizar as temperaturas diárias registradas em várias cidades.
-    Use a barra lateral para selecionar o ano que deseja visualizar.
-""")
-
-# Configurar a barra lateral para selecionar o ano
-anos = data['Year'].unique()
-ano_selecionado = st.sidebar.selectbox('Selecione o Ano', anos)
-
-# Filtrar os dados pelo ano selecionado
-dados_ano_selecionado = data[data['Year'] == ano_selecionado]
-
-# Criar e exibir os gráficos
-fig_line = plot1(dados_ano_selecionado, x='Date', y='AvgTemperature', color='City')
-fig_bar = plot2(dados_ano_selecionado.groupby('City').mean().reset_index(), x='City', y='AvgTemperature', color='City')
-fig_scatter = plot3(dados_ano_selecionado, x='Date', y='AvgTemperature', color='City')
-
-# Exibir os gráficos no Streamlit
-st.plotly_chart(fig_line)
-st.plotly_chart(fig_bar)
-st.plotly_chart(fig_scatter)
-
-# Adicionar uma tabela com os dados filtrados
-st.dataframe(dados_ano_selecionado[['Date', 'City', 'AvgTemperature']])
+# Verificar se há dados para a data mais recente
+if latest_data.empty:
+    st.warning("Não há dados disponíveis para a data selecionada.")
+else:
+    fig_map = px.choropleth(
+        latest_data,
+        locations="State Code",
+        geojson="https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson",
+        color="Confirmed",
+        hover_name="UF",
+        hover_data={"State Code": False, "Confirmed": True},
+        title='Casos Confirmados por Estado no Brasil',
+        projection="mercator"
+    )
+    fig_map.update_geos(fitbounds="locations", visible=False)
+    st.plotly_chart(fig_map, use_container_width=True)
